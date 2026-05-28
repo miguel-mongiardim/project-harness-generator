@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "project-harness-generator"
+version = "0.0.0"
+description = "Generate project-specific agent harnesses from inspected project context."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Project Harness Generator Contributors" }]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+testpaths = ["tests"]
