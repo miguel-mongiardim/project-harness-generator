@@ -3,6 +3,9 @@
 Minimal repository skeleton for a future CLI that generates project-specific
 agent harnesses.
 
-The only planning artifact currently carried into this repository is the full
-interview log in `docs/interview-log.md`. Product requirements and implementation
-plans will be added later only when explicitly requested.
+Planning artifacts:
+
+- `docs/interview-log.md` records the source grill interview and decisions.
+- `docs/prd-project-harness-generator-v0.md` defines the V0 product boundary.
+
+Implementation plans will be added later only when explicitly requested.
