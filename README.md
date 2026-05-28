@@ -1,11 +1,32 @@
 # Project Harness Generator
 
-Minimal repository skeleton for a future CLI that generates project-specific
-agent harnesses.
+Python CLI for generating project-specific agent harnesses from inspected
+project context.
+
+Implemented surface:
+
+- `project-harness --help` lists the V0 command surface.
+- `project-harness inspect <target>` performs read-only repository inspection
+  and reports evidence-labeled findings.
+- `project-harness inspect <target> --verify-commands` runs bounded,
+  non-invasive help/version probes for allowed tools and reports unsafe
+  candidates as skipped.
+- `project-harness inspect <target> --run-checks` executes detected project
+  checks such as pytest and reports results in a separate section.
+- Unknown commands, missing commands, and missing command arguments fail with
+  usage diagnostics and no traceback.
+
+The remaining V0 commands are parser placeholders and return a clear
+not-implemented diagnostic when invoked.
+
+Development setup:
+
+- Install test dependencies with `python -m pip install -e ".[test]"`.
+- Run tests with `python -m pytest -q`.
 
 Planning artifacts:
 
 - `docs/interview-log.md` records the source grill interview and decisions.
 - `docs/prd-project-harness-generator-v0.md` defines the V0 product boundary.
-
-Implementation plans will be added later only when explicitly requested.
+- `plans/project-harness-generator-v0.md` breaks the V0 PRD into vertical
+  tracer-bullet implementation phases.
