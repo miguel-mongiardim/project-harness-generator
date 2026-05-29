@@ -101,6 +101,8 @@ REQUIRED_STAGE_MARKDOWN_HEADINGS = (
     "## Fallback",
     "## Completion Criteria",
 )
+RUN_STATUS_VALUES = {"active", "paused", "completed", "abandoned"}
+STAGE_STATUS_VALUES = {"pending", "active", "complete", "skipped"}
 
 
 @dataclass(frozen=True)
@@ -289,6 +291,7 @@ def check_harness(target: Path) -> CheckResult:
 
     _check_manifest_provenance(target, issues)
     _check_stage_contracts(target, issues)
+    _check_runs(target, issues)
 
     return CheckResult(
         target=target,
@@ -437,7 +440,7 @@ def _render_body(
         stage_id = relative_path.split("/")[2]
         return _render_stage_manifest_body(stage_id)
     if relative_path.startswith(".agent-harness/references/"):
-        return _render_reference_body(relative_path, project_name, language)
+        return _render_reference_body(relative_path, inspection, config, project_name, language)
     if relative_path.startswith(".agent-harness/templates/"):
         return _render_template_body(relative_path)
     if relative_path.startswith(".agent-harness/scripts/"):
@@ -602,8 +605,241 @@ def _render_stage_manifest_body(stage_id: str) -> str:
     return yaml.safe_dump(data, sort_keys=False)
 
 
-def _render_reference_body(relative_path: str, project_name: str, language: str) -> str:
+def _render_reference_body(
+    relative_path: str,
+    inspection: InspectionResult,
+    config: UserConfig,
+    project_name: str,
+    language: str,
+) -> str:
     title = Path(relative_path).stem.replace("_", " ").title()
+    if relative_path.endswith("/commands.md"):
+        return "\n".join(
+            [
+                "# Commands",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Command Candidates",
+                "",
+                *_format_command_reference_lines(inspection),
+                "",
+            ]
+        )
+    if relative_path.endswith("/architecture.md"):
+        return "\n".join(
+            [
+                "# Architecture",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Inferred Architecture Signals",
+                "",
+                *_format_finding_reference_lines(inspection.architecture_signals),
+                "",
+            ]
+        )
+    if relative_path.endswith("/testing.md"):
+        return "\n".join(
+            [
+                "# Testing",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Inferred Testing Strategy",
+                "",
+                *_format_finding_reference_lines(inspection.test_configuration),
+                "",
+            ]
+        )
+    if relative_path.endswith("/workflow_classification.md"):
+        return "\n".join(
+            [
+                "# Workflow Classification",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Escalation Checklist",
+                "",
+                "- trivial: local, mechanical, low-risk work with no meaningful public behavior change.",
+                "- minor: bounded behavior or documentation work with clear acceptance criteria.",
+                "- non-trivial: work that affects public behavior, architecture impact, risk, uncertainty, or an explicit user request for the full workflow.",
+                "",
+                "Escalate when any of these factors are material: public behavior,",
+                "architecture impact, risk, uncertainty, or explicit user request.",
+                "",
+            ]
+        )
+    if relative_path.endswith("/quality_bar.md"):
+        return "\n".join(
+            [
+                "# Quality Bar",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Done Definitions",
+                "",
+                "- slice done: the observable behavior is implemented, tested through the public interface, reviewed against acceptance criteria, and ready for phase review.",
+                "- feature done: all planned slices are complete, cross-phase invariants still hold, and docs describe only implemented behavior.",
+                "- run done: required stages are complete or explicitly skipped, durable artifacts are promoted, and final validation passes.",
+                "",
+                "## Testing Rule",
+                "",
+                "- Use integration-style public-interface tests by default unless project evidence contradicts that testing strategy.",
+                "",
+            ]
+        )
+    if relative_path.endswith("/stack_generic.md"):
+        return "\n".join(
+            [
+                "# Generic Stack Add-On",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This language-agnostic stack add-on applies to every generated harness",
+                "and does not replace the core workflow contracts.",
+                "",
+                "## Guidance",
+                "",
+                "- Prefer repository-discovered commands over invented commands.",
+                "- Keep generated workflow rules separate from stack-specific conventions.",
+                "",
+            ]
+        )
+    if relative_path.endswith("/stack_python.md"):
+        return "\n".join(
+            [
+                "# Python Stack Add-On",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This Python stack add-on layers detected Python conventions onto the",
+                "generic harness and does not replace the core workflow contracts.",
+                "",
+                "## Evidence",
+                "",
+                "- pyproject.toml is the primary Python project metadata source when present.",
+                "- pytest is the preferred generated check when pytest configuration or a tests directory is detected.",
+                "",
+                "## Guidance",
+                "",
+                "- Keep Python-specific commands in references/commands.md.",
+                "- Keep public-interface tests as the default quality rule unless project evidence contradicts it.",
+                "",
+            ]
+        )
+    if relative_path.endswith("/security.md"):
+        return "\n".join(
+            [
+                "# Security",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Baseline",
+                "",
+                "- secrets: never print, commit, or move secrets into run artifacts.",
+                "- risky commands: get approval before destructive filesystem, shell, or Git operations.",
+                "- external mutation: get approval before mutating external services or user systems.",
+                "- dependency changes: get approval before adding, upgrading, or removing dependencies.",
+                "- untrusted input: validate paths and generated content before writing project files.",
+                "",
+            ]
+        )
+    if relative_path.endswith("/automation_limits.md"):
+        return "\n".join(
+            [
+                "# Automation Limits",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Limits",
+                "",
+                "- The generated helper surface does not execute AI stages.",
+                "- Require approval before risky commands, destructive writes, external mutation, or dependency changes.",
+                "- Prefer preview-first behavior for generated harness updates.",
+                "",
+            ]
+        )
+    if relative_path.endswith("/dependency_policy.md"):
+        return "\n".join(
+            [
+                "# Dependency Policy",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Dependency Changes",
+                "",
+                "- Get approval before adding, upgrading, or removing dependencies.",
+                "- record the rationale, affected commands, and validation evidence for each dependency change.",
+                "- Keep dependency changes separate from unrelated cleanup.",
+                "",
+            ]
+        )
+    if relative_path.endswith("/check_instructions.md"):
+        return "\n".join(
+            [
+                "# Check Instructions",
+                "",
+                f"Project: {project_name}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Local Self-Check",
+                "",
+                "- Run `project-harness check <target>` after harness-source changes.",
+                "",
+                "## CI",
+                "",
+                "- optional CI snippet: run `project-harness check .` after installing the generator.",
+                "- The generator describes checks only and does not modify CI files.",
+                "",
+            ]
+        )
+    if relative_path.endswith("/codex_workspace.md"):
+        state = "enabled" if config.codex_workspace.enabled else "disabled"
+        return "\n".join(
+            [
+                "# Codex Workspace",
+                "",
+                f"Project: {project_name}",
+                f"Codex Workspace integration: {state}",
+                "",
+                "This generated reference is an editable default. Durable rule changes",
+                "should be made here before they are summarized by routers or stage contracts.",
+                "",
+                "## Separation",
+                "",
+                "- project-local run artifacts stay in `.agent-harness/runs/`.",
+                "- cross-session operational notes stay outside the repository.",
+                "- Link active run ids from session notes instead of moving run artifacts into Codex Workspace.",
+                "",
+            ]
+        )
     return "\n".join(
         [
             f"# {title}",
@@ -616,6 +852,39 @@ def _render_reference_body(relative_path: str, project_name: str, language: str)
             "",
         ]
     )
+
+
+def _format_command_reference_lines(inspection: InspectionResult) -> list[str]:
+    if not inspection.command_candidates:
+        return ["- none detected"]
+    lines: list[str] = []
+    for candidate in inspection.command_candidates:
+        lines.extend(
+            [
+                f"- command: {candidate.command}",
+                f"  source: {candidate.source}",
+                f"  verification_state: {candidate.verification_state}",
+                f"  confidence: {candidate.confidence}",
+                f"  notes: {candidate.notes}",
+            ]
+        )
+    return lines
+
+
+def _format_finding_reference_lines(findings: list[Finding]) -> list[str]:
+    if not findings:
+        return ["- none detected"]
+    lines: list[str] = []
+    for finding in findings:
+        lines.extend(
+            [
+                f"- {finding.name}: {finding.value}",
+                f"  evidence: {finding.evidence}",
+                f"  confidence: {finding.confidence}",
+                "  confirmation_status: unconfirmed",
+            ]
+        )
+    return lines
 
 
 def _render_template_body(relative_path: str) -> str:
@@ -1144,6 +1413,48 @@ def _check_gitignore_policy(target: Path, issues: list[CheckIssue]) -> None:
     for entry in REQUIRED_GITIGNORE_ENTRIES:
         if entry not in present_entries:
             issues.append(CheckIssue(".gitignore", f"missing required volatile-state ignore entry: {entry}"))
+
+
+def _check_runs(target: Path, issues: list[CheckIssue]) -> None:
+    runs_root = target / ".agent-harness" / "runs"
+    if not runs_root.exists():
+        return
+    for metadata_file in runs_root.glob("*/run_metadata.yaml"):
+        relative_path = metadata_file.relative_to(target).as_posix()
+        try:
+            metadata = yaml.safe_load(metadata_file.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            issues.append(CheckIssue(relative_path, f"could not read run metadata: {exc}"))
+            continue
+        if not isinstance(metadata, dict):
+            issues.append(CheckIssue(relative_path, "run metadata must be a mapping"))
+            continue
+
+        if metadata.get("task_classification") == "non-trivial":
+            if not metadata.get("source_branch") and not metadata.get("branch_waiver"):
+                issues.append(
+                    CheckIssue(
+                        relative_path,
+                        "non-trivial run requires source_branch or branch_waiver",
+                    )
+                )
+        status = metadata.get("status")
+        if status not in RUN_STATUS_VALUES:
+            issues.append(CheckIssue(relative_path, "run status is not a supported value"))
+        current_stage = metadata.get("current_stage")
+        if current_stage not in STAGE_IDS:
+            issues.append(CheckIssue(relative_path, "current_stage is not a generated stage id"))
+        stages = metadata.get("stages")
+        if not isinstance(stages, dict):
+            issues.append(CheckIssue(relative_path, "stages must be a mapping"))
+            continue
+        for stage_id in STAGE_IDS:
+            stage = stages.get(stage_id)
+            if not isinstance(stage, dict):
+                issues.append(CheckIssue(relative_path, f"missing run stage metadata: {stage_id}"))
+                continue
+            if stage.get("status") not in STAGE_STATUS_VALUES:
+                issues.append(CheckIssue(relative_path, f"unsupported stage status for {stage_id}"))
 
 
 def _sha256(content: str) -> str:

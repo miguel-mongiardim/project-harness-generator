@@ -25,17 +25,27 @@ Implemented surface:
 - Generated harnesses include structural stage contracts for project discovery,
   grill context, PRD, plan, TDD slice, phase review, and harness learning,
   plus local templates for harness-owned run artifacts.
+- Generated harness references include durable rule ownership, command evidence,
+  workflow classification, quality bar, security baseline, automation and
+  dependency policies, check instructions, optional Codex Workspace separation,
+  and generic/Python stack add-ons.
 - `project-harness check <target>` validates generated harness files,
   manifest and stage contract structure, provenance and registry hash
-  consistency, and volatile-state ignore policy.
+  consistency, volatile-state ignore policy, and run metadata branch/status
+  invariants.
+- `project-harness new-run <target> <slug> --classification <...>` creates
+  isolated run skeletons with deterministic run ids, stage directories, run
+  metadata, branch policy metadata, and `next_action.md`.
+- `project-harness pause <target> <run-id> --next-action <text>` and
+  `project-harness resume <target> <run-id>` update run status while
+  preserving per-stage state.
 - `project-harness update <target>` and
-  `project-harness new-run <target> <slug>` resolve local config and CLI
-  overrides without writing files.
+  later workflow commands remain preview or placeholder surfaces where noted.
 - Unknown commands, missing commands, and missing command arguments fail with
   usage diagnostics and no traceback.
 
-Harness update planning, run creation, approvals, advancement, pause/resume,
-promotion, and the remaining V0 commands are not implemented yet.
+Harness update planning, approvals, advancement, stage skips, promotion, and
+the remaining V0 commands are not implemented yet.
 
 Development setup:
 

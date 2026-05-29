@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -155,6 +156,7 @@ def test_command_cli_flags_override_user_config_values() -> None:
             )
         )
         env = {"HOME": str(home), "USERPROFILE": str(home)}
+        subprocess.run(["git", "init"], cwd=target, check=True, capture_output=True)
 
         generate = run_project_harness(
             "generate",
@@ -174,10 +176,20 @@ def test_command_cli_flags_override_user_config_values() -> None:
             "detached",
             extra_env=env,
         )
+        apply_harness = run_project_harness(
+            "generate",
+            str(target),
+            "--apply",
+            extra_env=env,
+        )
         new_run = run_project_harness(
             "new-run",
             str(target),
             "config-slice",
+            "--classification",
+            "minor",
+            "--date",
+            "2026-05-29",
             "--prd-path",
             "docs/run-prd.md",
             "--plan-path",
@@ -199,11 +211,21 @@ def test_command_cli_flags_override_user_config_values() -> None:
         assert "default_prd_path: docs/config-prd.md" in update.stdout
         assert "update_policy: detached" in update.stdout
 
+        assert apply_harness.returncode == 0, apply_harness.stderr
         assert new_run.returncode == 0, new_run.stderr
         assert "Project Harness New Run" in new_run.stdout
-        assert "default_prd_path: docs/run-prd.md" in new_run.stdout
-        assert "default_plan_path: plans/run-plan.md" in new_run.stdout
-        assert "update_policy: manual_only" in new_run.stdout
+        metadata = yaml.safe_load(
+            (
+                target
+                / ".agent-harness"
+                / "runs"
+                / "2026-05-29-config-slice"
+                / "run_metadata.yaml"
+            ).read_text()
+        )
+        assert metadata["default_prd_path"] == "docs/run-prd.md"
+        assert metadata["default_plan_path"] == "plans/run-plan.md"
+        assert metadata["workflow_id"] == "prd-plan-tdd"
 
 
 def test_cli_path_overrides_must_stay_project_relative() -> None:
@@ -221,6 +243,8 @@ def test_cli_path_overrides_must_stay_project_relative() -> None:
             "new-run",
             str(target),
             "config-slice",
+            "--classification",
+            "minor",
             "--prd-path",
             "../outside.md",
         )

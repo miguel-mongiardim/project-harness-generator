@@ -518,27 +518,27 @@ from detected stack add-ons.
 
 ### Acceptance criteria
 
-- [ ] `.agent-harness/references/` is named as the durable rule source of truth.
-- [ ] Command references preserve source, verification state, confidence, and
+- [x] `.agent-harness/references/` is named as the durable rule source of truth.
+- [x] Command references preserve source, verification state, confidence, and
       notes.
-- [ ] Workflow classification reference includes a concrete
+- [x] Workflow classification reference includes a concrete
       trivial/minor/non-trivial escalation checklist based on public behavior,
       architecture impact, risk, uncertainty, and explicit user requests.
-- [ ] Quality-bar reference defines slice, feature, and run done.
-- [ ] Quality-bar reference encodes integration-style public-interface tests as
+- [x] Quality-bar reference defines slice, feature, and run done.
+- [x] Quality-bar reference encodes integration-style public-interface tests as
       the default unless project evidence contradicts it.
-- [ ] Module context is selected through an editable path-based
+- [x] Module context is selected through an editable path-based
       `modules/module_map.yaml`.
-- [ ] Core workflow references are language-agnostic.
-- [ ] Generic and Python stack add-ons are layered separately and do not replace
+- [x] Core workflow references are language-agnostic.
+- [x] Generic and Python stack add-ons are layered separately and do not replace
       core workflow contracts.
-- [ ] Optional Codex Workspace integration keeps project-local run artifacts
+- [x] Optional Codex Workspace integration keeps project-local run artifacts
       separate from cross-session operational notes.
-- [ ] Security baseline covers secrets, risky commands, external mutation,
+- [x] Security baseline covers secrets, risky commands, external mutation,
       dependency changes, and untrusted inputs.
-- [ ] Generated check instructions describe local self-check and optional CI
+- [x] Generated check instructions describe local self-check and optional CI
       snippets without modifying CI files.
-- [ ] Architecture and testing inferences are labeled with evidence,
+- [x] Architecture and testing inferences are labeled with evidence,
       confidence, and confirmation status before becoming durable rules.
 
 ### Out of scope
@@ -584,21 +584,21 @@ branch metadata.
 
 ### Acceptance criteria
 
-- [ ] Run ids use `<YYYY-MM-DD>-<slug>` with local date by default and
+- [x] Run ids use `<YYYY-MM-DD>-<slug>` with local date by default and
       `--date` override for deterministic tests.
-- [ ] Slugs normalize to lowercase kebab case with ASCII letters, digits, and
+- [x] Slugs normalize to lowercase kebab case with ASCII letters, digits, and
       hyphens only.
-- [ ] Run id collisions fail with actionable diagnostics.
-- [ ] New runs require explicit task classification:
+- [x] Run id collisions fail with actionable diagnostics.
+- [x] New runs require explicit task classification:
       `trivial`, `minor`, or `non-trivial`.
-- [ ] New runs receive metadata, stage output directories, and `next_action.md`.
-- [ ] Run metadata records run status, current stage, per-stage status, source
+- [x] New runs receive metadata, stage output directories, and `next_action.md`.
+- [x] Run metadata records run status, current stage, per-stage status, source
       branch, branch waiver when used, created date, and task classification.
-- [ ] Run status values are `active`, `paused`, `completed`, and `abandoned`.
-- [ ] Stage status values are `pending`, `active`, `complete`, and `skipped`.
-- [ ] Non-trivial Git worktree runs require a source branch or branch waiver.
-- [ ] `check` fails when a non-trivial run lacks both source branch and waiver.
-- [ ] `pause` and `resume` preserve per-stage status.
+- [x] Run status values are `active`, `paused`, `completed`, and `abandoned`.
+- [x] Stage status values are `pending`, `active`, `complete`, and `skipped`.
+- [x] Non-trivial Git worktree runs require a source branch or branch waiver.
+- [x] `check` fails when a non-trivial run lacks both source branch and waiver.
+- [x] `pause` and `resume` preserve per-stage status.
 
 ### Out of scope
 
