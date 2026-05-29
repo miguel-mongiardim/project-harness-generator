@@ -264,13 +264,13 @@ resolution, and command-specific consumption. Keep config small:
 
 ### Acceptance criteria
 
-- [ ] Missing config returns the PRD-defined defaults.
-- [ ] Valid config can be validated through the public CLI.
-- [ ] Unknown fields and invalid types fail before generate or update proceeds.
-- [ ] `update_policy` only accepts `conservative`, `manual_only`, or `detached`.
-- [ ] `workflow_id` only accepts `prd-plan-tdd`.
-- [ ] Project-relative path fields reject absolute paths.
-- [ ] CLI flags override config values for generate, update, and new-run.
+- [x] Missing config returns the PRD-defined defaults.
+- [x] Valid config can be validated through the public CLI.
+- [x] Unknown fields and invalid types fail before generate or update proceeds.
+- [x] `update_policy` only accepts `conservative`, `manual_only`, or `detached`.
+- [x] `workflow_id` only accepts `prd-plan-tdd`.
+- [x] Project-relative path fields reject absolute paths.
+- [x] CLI flags override config values for generate, update, and new-run.
 
 ### Out of scope
 

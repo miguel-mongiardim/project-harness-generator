@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 from collections.abc import Sequence
 
+from .config import ConfigError, apply_config_overrides, format_config, load_config
 from .inspection import InspectionError, format_inspection, inspect_repository
 
 
@@ -39,10 +40,19 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="Run detected project checks such as tests and builds.",
             )
+        elif command == "generate":
+            _add_prd_plan_workflow_options(command_parser)
+        elif command == "update":
+            command_parser.add_argument(
+                "--update-policy",
+                choices=("conservative", "manual_only", "detached"),
+                help="Override the configured update policy for this command.",
+            )
 
     new_run = subparsers.add_parser("new-run", help="Create an isolated run skeleton.")
     new_run.add_argument("target")
     new_run.add_argument("slug")
+    _add_prd_plan_workflow_options(new_run)
 
     approve = subparsers.add_parser("approve", help="Record a deterministic approval marker.")
     approve.add_argument("target")
@@ -85,6 +95,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_prd_plan_workflow_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--prd-path", help="Override the configured default PRD path.")
+    parser.add_argument("--plan-path", help="Override the configured default plan path.")
+    parser.add_argument(
+        "--workflow-id",
+        choices=("prd-plan-tdd",),
+        help="Override the configured workflow id.",
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -93,6 +113,37 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.target,
             verify_commands=args.verify_commands,
             run_checks=args.run_checks,
+        )
+    if args.command == "config" and args.config_command == "validate":
+        config_path = Path(args.path) if args.path is not None else None
+        return _run_config_validate(config_path)
+    if args.command == "generate":
+        return _run_configured_command(
+            command_name="generate",
+            heading="Generate",
+            target=args.target,
+            workflow_id=args.workflow_id,
+            default_prd_path=args.prd_path,
+            default_plan_path=args.plan_path,
+            pending_behavior="harness rendering is not implemented in this phase",
+        )
+    if args.command == "update":
+        return _run_configured_command(
+            command_name="update",
+            heading="Update",
+            target=args.target,
+            update_policy=args.update_policy,
+            pending_behavior="harness update planning is not implemented in this phase",
+        )
+    if args.command == "new-run":
+        return _run_configured_command(
+            command_name="new-run",
+            heading="New Run",
+            target=args.target,
+            workflow_id=args.workflow_id,
+            default_prd_path=args.prd_path,
+            default_plan_path=args.plan_path,
+            pending_behavior="run creation is not implemented in this phase",
         )
     command = args.command
     if command == "config":
@@ -112,4 +163,46 @@ def _run_inspect(target: str, *, verify_commands: bool, run_checks: bool) -> int
         print(f"project-harness inspect: {exc}", file=sys.stderr)
         return 2
     print(format_inspection(result), end="")
+    return 0
+
+
+def _run_config_validate(config_path: Path | None) -> int:
+    try:
+        config = load_config(config_path)
+    except ConfigError as exc:
+        print(f"project-harness config validate: {exc}", file=sys.stderr)
+        return 2
+    print(format_config(config), end="")
+    return 0
+
+
+def _run_configured_command(
+    command_name: str,
+    heading: str,
+    target: str,
+    *,
+    workflow_id: str | None = None,
+    default_prd_path: str | None = None,
+    default_plan_path: str | None = None,
+    update_policy: str | None = None,
+    pending_behavior: str,
+) -> int:
+    try:
+        config = apply_config_overrides(
+            load_config(),
+            workflow_id=workflow_id,
+            default_prd_path=default_prd_path,
+            default_plan_path=default_plan_path,
+            update_policy=update_policy,
+        )
+    except ConfigError as exc:
+        print(f"project-harness {command_name}: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"Project Harness {heading}")
+    print(f"Target: {Path(target).resolve()}")
+    print("")
+    print(format_config(config), end="")
+    print("")
+    print(f"No files written; {pending_behavior}.")
     return 0

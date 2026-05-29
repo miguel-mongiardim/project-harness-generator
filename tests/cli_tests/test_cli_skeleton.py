@@ -71,11 +71,11 @@ def test_missing_command_argument_fails_with_command_usage() -> None:
 
 
 def test_unimplemented_command_fails_actionably() -> None:
-    result = run_project_harness("generate", ".")
+    result = run_project_harness("check", ".")
 
     assert result.returncode != 0
     assert "not implemented" in result.stderr
-    assert "generate" in result.stderr
+    assert "check" in result.stderr
     assert "traceback" not in result.stderr.lower()
 
 

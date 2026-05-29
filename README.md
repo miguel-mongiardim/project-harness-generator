@@ -13,11 +13,16 @@ Implemented surface:
   candidates as skipped.
 - `project-harness inspect <target> --run-checks` executes detected project
   checks such as pytest and reports results in a separate section.
+- `project-harness config validate [path]` validates local user config or
+  reports stable defaults when no config exists.
+- `project-harness generate <target>`, `project-harness update <target>`, and
+  `project-harness new-run <target> <slug>` resolve local config and CLI
+  overrides without writing files.
 - Unknown commands, missing commands, and missing command arguments fail with
   usage diagnostics and no traceback.
 
-The remaining V0 commands are parser placeholders and return a clear
-not-implemented diagnostic when invoked.
+Harness rendering, harness update planning, run creation, and the remaining V0
+commands are not implemented yet.
 
 Development setup:
 

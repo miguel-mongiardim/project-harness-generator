@@ -9,7 +9,7 @@ description = "Generate project-specific agent harnesses from inspected project 
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "Project Harness Generator Contributors" }]
-dependencies = []
+dependencies = ["PyYAML>=6.0"]
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
