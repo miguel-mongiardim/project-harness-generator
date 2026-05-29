@@ -315,14 +315,14 @@ emit only preview output in this phase.
 
 ### Acceptance criteria
 
-- [ ] Preview creates no files or directories in the target repository.
-- [ ] Preview includes every intended write path and whether it is addable,
+- [x] Preview creates no files or directories in the target repository.
+- [x] Preview includes every intended write path and whether it is addable,
       unchanged, conflicted, or ignored-state-related.
-- [ ] Preview reports minimal required `.gitignore` changes for
+- [x] Preview reports minimal required `.gitignore` changes for
       `.agent-harness/runs/` and `.agent-harness/tmp/`.
-- [ ] Existing `AGENTS.md` or `.agent-harness/` files are reported as conflicts
+- [x] Existing `AGENTS.md` or `.agent-harness/` files are reported as conflicts
       unless the future update command is used.
-- [ ] Preview consumes config defaults and CLI overrides for PRD path, plan
+- [x] Preview consumes config defaults and CLI overrides for PRD path, plan
       path, workflow id, and update policy.
 
 ### Out of scope

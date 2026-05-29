@@ -15,13 +15,16 @@ Implemented surface:
   checks such as pytest and reports results in a separate section.
 - `project-harness config validate [path]` validates local user config or
   reports stable defaults when no config exists.
-- `project-harness generate <target>`, `project-harness update <target>`, and
+- `project-harness generate <target>` previews proposed harness write paths,
+  categories, add/conflict/ignore status, provenance status, and required
+  `.gitignore` entries without writing files.
+- `project-harness update <target>` and
   `project-harness new-run <target> <slug>` resolve local config and CLI
   overrides without writing files.
 - Unknown commands, missing commands, and missing command arguments fail with
   usage diagnostics and no traceback.
 
-Harness rendering, harness update planning, run creation, and the remaining V0
+Harness apply, harness update planning, run creation, and the remaining V0
 commands are not implemented yet.
 
 Development setup:

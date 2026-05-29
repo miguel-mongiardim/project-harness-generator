@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 from .config import ConfigError, apply_config_overrides, format_config, load_config
 from .inspection import InspectionError, format_inspection, inspect_repository
+from .render_plan import build_render_plan, format_render_plan
 
 
 COMMANDS_WITH_TARGET = {
@@ -42,6 +43,11 @@ def build_parser() -> argparse.ArgumentParser:
             )
         elif command == "generate":
             _add_prd_plan_workflow_options(command_parser)
+            command_parser.add_argument(
+                "--update-policy",
+                choices=("conservative", "manual_only", "detached"),
+                help="Override the configured update policy for generated harness provenance.",
+            )
         elif command == "update":
             command_parser.add_argument(
                 "--update-policy",
@@ -118,14 +124,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         config_path = Path(args.path) if args.path is not None else None
         return _run_config_validate(config_path)
     if args.command == "generate":
-        return _run_configured_command(
-            command_name="generate",
-            heading="Generate",
+        return _run_generate(
             target=args.target,
             workflow_id=args.workflow_id,
             default_prd_path=args.prd_path,
             default_plan_path=args.plan_path,
-            pending_behavior="harness rendering is not implemented in this phase",
+            update_policy=args.update_policy,
         )
     if args.command == "update":
         return _run_configured_command(
@@ -173,6 +177,44 @@ def _run_config_validate(config_path: Path | None) -> int:
         print(f"project-harness config validate: {exc}", file=sys.stderr)
         return 2
     print(format_config(config), end="")
+    return 0
+
+
+def _run_generate(
+    target: str,
+    *,
+    workflow_id: str | None,
+    default_prd_path: str | None,
+    default_plan_path: str | None,
+    update_policy: str | None,
+) -> int:
+    try:
+        config = apply_config_overrides(
+            load_config(),
+            workflow_id=workflow_id,
+            default_prd_path=default_prd_path,
+            default_plan_path=default_plan_path,
+            update_policy=update_policy,
+        )
+    except ConfigError as exc:
+        print(f"project-harness generate: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        inspection = inspect_repository(Path(target))
+    except InspectionError as exc:
+        print(f"project-harness generate: {exc}", file=sys.stderr)
+        return 2
+
+    render_plan = build_render_plan(Path(target), inspection, config)
+    print("Project Harness Generate Preview")
+    print(f"Target: {render_plan.target}")
+    print("")
+    print(format_config(config), end="")
+    print("")
+    print(format_render_plan(render_plan), end="")
+    print("")
+    print("No files written.")
     return 0
 
 
