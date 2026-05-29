@@ -369,24 +369,24 @@ enforces Git worktree policy or explicit waiver.
 
 ### Acceptance criteria
 
-- [ ] Apply requires a Git worktree unless explicitly waived.
-- [ ] Apply writes root `AGENTS.md` as a router rather than duplicating full
+- [x] Apply requires a Git worktree unless explicitly waived.
+- [x] Apply writes root `AGENTS.md` as a router rather than duplicating full
       contracts.
-- [ ] Apply writes `.agent-harness/CONTEXT.md`, `harness.yaml`,
+- [x] Apply writes `.agent-harness/CONTEXT.md`, `harness.yaml`,
       `CHANGELOG.md`, `references/`, `stages/`, `templates/`, `scripts/`, and
       `modules/module_map.yaml`.
-- [ ] Generated source files include provenance headers with generator name,
+- [x] Generated source files include provenance headers with generator name,
       version, managed/update status, file or template id, last generated hash
       when applicable, and human-edit protection wording.
-- [ ] `.agent-harness/harness.yaml` records generated-file ids, paths, generator
+- [x] `.agent-harness/harness.yaml` records generated-file ids, paths, generator
       versions, template versions, update policy, and last generated SHA-256.
-- [ ] `.gitignore` keeps volatile run and temporary state ignored while harness
+- [x] `.gitignore` keeps volatile run and temporary state ignored while harness
       source remains commit-eligible.
-- [ ] `check` validates required files, manifest schema, Markdown structural
+- [x] `check` validates required files, manifest schema, Markdown structural
       headings, generated-file registry consistency, and ignore policy.
-- [ ] `check` treats registry data as authoritative when headers disagree and
+- [x] `check` treats registry data as authoritative when headers disagree and
       reports header drift.
-- [ ] Golden-file coverage stays selective: root router,
+- [x] Golden-file coverage stays selective: root router,
       `.agent-harness/CONTEXT.md`, one representative stage contract,
       `harness.yaml`, and one `stage.yaml`; broad snapshots for every generated
       file are avoided unless later evidence justifies them.
@@ -438,36 +438,36 @@ fallback procedures without vendoring skill bodies.
 
 ### Acceptance criteria
 
-- [ ] Grill context contract requires `interview_log.md`,
+- [x] Grill context contract requires `interview_log.md`,
       `context_summary.md`, and `decision_register.md`.
-- [ ] Downstream PRD work consumes `context_summary.md` by default.
-- [ ] Grill mechanics require one controlling interview, optional focused
+- [x] Downstream PRD work consumes `context_summary.md` by default.
+- [x] Grill mechanics require one controlling interview, optional focused
       sub-interviews, recommended answers with rationale, one branch at a time
       by default, limited batching for independent low-risk facts, and explicit
       evidence-backed premise challenges.
-- [ ] Grill contract requires testing-strategy candidates to be confirmed,
+- [x] Grill contract requires testing-strategy candidates to be confirmed,
       revised, or rejected.
-- [ ] PRD contract blocks approval while blocking open questions remain.
-- [ ] Plan contract requires an exact approved `prd_gate` marker for the PRD
+- [x] PRD contract blocks approval while blocking open questions remain.
+- [x] Plan contract requires an exact approved `prd_gate` marker for the PRD
       being planned.
-- [ ] Plan contract produces durable tracer-bullet plans, per-slice execution
+- [x] Plan contract produces durable tracer-bullet plans, per-slice execution
       summaries, and cross-phase invariants.
-- [ ] TDD slice contract records run-local progress without updating durable
+- [x] TDD slice contract records run-local progress without updating durable
       plan state directly.
-- [ ] Phase review can fail a slice even when tests pass.
-- [ ] Phase review checks acceptance criteria, project rules, cross-phase
+- [x] Phase review can fail a slice even when tests pass.
+- [x] Phase review checks acceptance criteria, project rules, cross-phase
       invariants, structured self-review, high-risk independent review,
       pre-commit review when committing is in scope, and review gates.
-- [ ] Harness learning separates local observations, generator backlog, and
+- [x] Harness learning separates local observations, generator backlog, and
       proposed durable harness-source patches.
-- [ ] Harness-learning proposals cite evidence, explain justification, name a
+- [x] Harness-learning proposals cite evidence, explain justification, name a
       target harness-source file, and remain unapplied until user acceptance.
-- [ ] Generated local templates include current snapshot, context summary,
+- [x] Generated local templates include current snapshot, context summary,
       decision register, phase review, harness learning, run metadata, stage
       manifest, module context, promotion record, and next action templates.
-- [ ] PRD, plan, slice, and TDD artifact formats are referenced from workflow
+- [x] PRD, plan, slice, and TDD artifact formats are referenced from workflow
       skills rather than generated as local templates.
-- [ ] Required-skill references include `grill-me`, `write-a-prd`,
+- [x] Required-skill references include `grill-me`, `write-a-prd`,
       `prd-to-plan`, `tdd`, `prd-plan-tdd-workflow`, and `precommit-review`
       by role/name with compact missing-skill fallbacks.
 

@@ -9,7 +9,15 @@ from collections.abc import Sequence
 
 from .config import ConfigError, apply_config_overrides, format_config, load_config
 from .inspection import InspectionError, format_inspection, inspect_repository
-from .render_plan import build_render_plan, format_render_plan
+from .render_plan import (
+    ApplyError,
+    apply_render_plan,
+    build_render_plan,
+    check_harness,
+    format_apply_result,
+    format_check_result,
+    format_render_plan,
+)
 
 
 COMMANDS_WITH_TARGET = {
@@ -43,6 +51,16 @@ def build_parser() -> argparse.ArgumentParser:
             )
         elif command == "generate":
             _add_prd_plan_workflow_options(command_parser)
+            command_parser.add_argument(
+                "--apply",
+                action="store_true",
+                help="Write the generated harness after preview planning and safety checks.",
+            )
+            command_parser.add_argument(
+                "--allow-non-git",
+                action="store_true",
+                help="Explicitly waive the Git worktree requirement for apply.",
+            )
             command_parser.add_argument(
                 "--update-policy",
                 choices=("conservative", "manual_only", "detached"),
@@ -130,7 +148,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             default_prd_path=args.prd_path,
             default_plan_path=args.plan_path,
             update_policy=args.update_policy,
+            apply=args.apply,
+            allow_non_git=args.allow_non_git,
         )
+    if args.command == "check":
+        return _run_check(args.target)
     if args.command == "update":
         return _run_configured_command(
             command_name="update",
@@ -187,6 +209,8 @@ def _run_generate(
     default_prd_path: str | None,
     default_plan_path: str | None,
     update_policy: str | None,
+    apply: bool,
+    allow_non_git: bool,
 ) -> int:
     try:
         config = apply_config_overrides(
@@ -207,6 +231,20 @@ def _run_generate(
         return 2
 
     render_plan = build_render_plan(Path(target), inspection, config)
+    if apply:
+        try:
+            apply_result = apply_render_plan(render_plan, allow_non_git=allow_non_git)
+        except ApplyError as exc:
+            print(f"project-harness generate: {exc}", file=sys.stderr)
+            return 2
+        print("Project Harness Generate Apply")
+        print(f"Target: {render_plan.target}")
+        print("")
+        print(format_config(config), end="")
+        print("")
+        print(format_apply_result(apply_result), end="")
+        return 0
+
     print("Project Harness Generate Preview")
     print(f"Target: {render_plan.target}")
     print("")
@@ -216,6 +254,12 @@ def _run_generate(
     print("")
     print("No files written.")
     return 0
+
+
+def _run_check(target: str) -> int:
+    result = check_harness(Path(target))
+    print(format_check_result(result), end="")
+    return 0 if result.status == "passed" else 2
 
 
 def _run_configured_command(

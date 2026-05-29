@@ -18,14 +18,24 @@ Implemented surface:
 - `project-harness generate <target>` previews proposed harness write paths,
   categories, add/conflict/ignore status, provenance status, and required
   `.gitignore` entries without writing files.
+- `project-harness generate <target> --apply` writes a new generated harness
+  only after explicit apply, requires a Git worktree unless
+  `--allow-non-git` is supplied, refuses existing harness conflicts, and keeps
+  volatile `.agent-harness/runs/` and `.agent-harness/tmp/` state ignored.
+- Generated harnesses include structural stage contracts for project discovery,
+  grill context, PRD, plan, TDD slice, phase review, and harness learning,
+  plus local templates for harness-owned run artifacts.
+- `project-harness check <target>` validates generated harness files,
+  manifest and stage contract structure, provenance and registry hash
+  consistency, and volatile-state ignore policy.
 - `project-harness update <target>` and
   `project-harness new-run <target> <slug>` resolve local config and CLI
   overrides without writing files.
 - Unknown commands, missing commands, and missing command arguments fail with
   usage diagnostics and no traceback.
 
-Harness apply, harness update planning, run creation, and the remaining V0
-commands are not implemented yet.
+Harness update planning, run creation, approvals, advancement, pause/resume,
+promotion, and the remaining V0 commands are not implemented yet.
 
 Development setup:
 
