@@ -91,3 +91,41 @@ def test_inspect_missing_target_fails_with_clear_diagnostic() -> None:
         assert "target path does not exist" in result.stderr
         assert str(missing) in result.stderr
         assert "traceback" not in result.stderr.lower()
+
+
+def test_inspect_invalid_pyproject_fails_without_traceback() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target = Path(temp_dir) / "sample_project"
+        target.mkdir()
+        (target / "pyproject.toml").write_text("[project\n")
+
+        result = run_project_harness("inspect", str(target))
+
+        assert result.returncode != 0
+        assert "could not parse pyproject.toml" in result.stderr
+        assert "traceback" not in result.stderr.lower()
+
+
+def test_inspect_invalid_makefile_encoding_fails_without_traceback() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target = Path(temp_dir) / "sample_project"
+        target.mkdir()
+        (target / "Makefile").write_bytes(b"\xff")
+
+        result = run_project_harness("inspect", str(target))
+
+        assert result.returncode != 0
+        assert "could not decode Makefile as UTF-8" in result.stderr
+        assert "traceback" not in result.stderr.lower()
+
+
+def test_inspect_reports_bogus_git_marker_as_not_a_worktree() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target = Path(temp_dir) / "sample_project"
+        target.mkdir()
+        (target / ".git").write_text("not a git directory\n")
+
+        result = run_project_harness("inspect", str(target))
+
+        assert result.returncode == 0, result.stderr
+        assert "git worktree: no" in result.stdout

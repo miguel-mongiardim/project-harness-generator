@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
 import yaml
 
 
@@ -118,6 +119,97 @@ def test_pause_and_resume_preserve_stage_status() -> None:
         assert resumed["status"] == "active"
         assert resumed["current_stage"] == before_pause["current_stage"]
         assert resumed["stages"] == before_pause["stages"]
+
+
+def test_pause_rejects_run_id_path_traversal_without_touching_external_files() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        target = _generated_harness_target(root)
+        outside = root / "outside"
+        outside.mkdir()
+        metadata_path = outside / "run_metadata.yaml"
+        original_metadata = yaml.safe_dump(
+            {
+                "status": "active",
+                "current_stage": "00_project_discovery",
+                "stages": {},
+            },
+            sort_keys=False,
+        )
+        metadata_path.write_text(original_metadata)
+
+        result = run_project_harness(
+            "pause",
+            str(target),
+            "../../../outside",
+            "--next-action",
+            "Do not write this outside the target.",
+        )
+
+        assert result.returncode != 0
+        assert "run id must match generated run id format" in result.stderr
+        assert metadata_path.read_text() == original_metadata
+        assert not (outside / "next_action.md").exists()
+
+
+def test_pause_preflights_next_action_symlink_before_metadata_update() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        target = _generated_harness_target(root)
+        create_result = run_project_harness(
+            "new-run",
+            str(target),
+            "Symlink Pause",
+            "--classification",
+            "minor",
+            "--date",
+            "2026-05-29",
+        )
+        assert create_result.returncode == 0, create_result.stderr
+        run_id = "2026-05-29-symlink-pause"
+        run_root = target / ".agent-harness" / "runs" / run_id
+        metadata_path = run_root / "run_metadata.yaml"
+        original_metadata = metadata_path.read_text()
+        outside_next_action = root / "outside-next-action.md"
+        outside_next_action.write_text("# Outside\n")
+        (run_root / "next_action.md").unlink()
+        _symlink_or_skip(outside_next_action, run_root / "next_action.md")
+
+        result = run_project_harness(
+            "pause",
+            str(target),
+            run_id,
+            "--next-action",
+            "Do not write through a symlink.",
+        )
+
+        assert result.returncode != 0
+        assert "refusing to write through symlinked path" in result.stderr
+        assert metadata_path.read_text() == original_metadata
+        assert outside_next_action.read_text() == "# Outside\n"
+
+
+def test_new_run_rejects_symlinked_runs_directory_without_writing_outside_target() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        target = _generated_harness_target(root)
+        outside_runs = root / "outside-runs"
+        outside_runs.mkdir()
+        _symlink_or_skip(outside_runs, target / ".agent-harness" / "runs")
+
+        result = run_project_harness(
+            "new-run",
+            str(target),
+            "External Run",
+            "--classification",
+            "minor",
+            "--date",
+            "2026-05-29",
+        )
+
+        assert result.returncode != 0
+        assert "refusing to write through symlinked path: .agent-harness/runs" in result.stderr
+        assert not (outside_runs / "2026-05-29-external-run").exists()
 
 
 def test_check_fails_non_trivial_run_without_source_branch_or_waiver() -> None:
@@ -275,3 +367,10 @@ def _generated_harness_target(root: Path) -> Path:
     apply_result = run_project_harness("generate", str(target), "--apply")
     assert apply_result.returncode == 0, apply_result.stderr
     return target
+
+
+def _symlink_or_skip(source: Path, link: Path) -> None:
+    try:
+        os.symlink(source, link, target_is_directory=source.is_dir())
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable in this environment: {exc}")

@@ -4,25 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
+import subprocess
 
 from .config import UserConfig
 from .inspection import Finding, InspectionResult
+from .workflow import STAGE_IDS, STAGE_STATUS_VALUES, STAGE_TITLES, RUN_STATUS_VALUES
 from . import __version__
 
 import yaml
 
-
-STAGE_IDS = (
-    "00_project_discovery",
-    "01_grill_context",
-    "02_prd",
-    "03_plan",
-    "04_tdd_slice",
-    "05_phase_review",
-    "06_harness_learning",
-)
 
 REFERENCE_FILES = (
     "project.md",
@@ -69,15 +61,6 @@ SELF_HASH_PLACEHOLDER = "SELF_HASH_PLACEHOLDER"
 PROVENANCE_NOTICE = (
     "Human edits are allowed; preview-first updates must protect them."
 )
-STAGE_TITLES = {
-    "00_project_discovery": "Project Discovery",
-    "01_grill_context": "Grill Context",
-    "02_prd": "PRD",
-    "03_plan": "Plan",
-    "04_tdd_slice": "TDD Slice",
-    "05_phase_review": "Phase Review",
-    "06_harness_learning": "Harness Learning",
-}
 REQUIRED_STAGE_MANIFEST_FIELDS = {
     "stage_id",
     "title",
@@ -101,10 +84,6 @@ REQUIRED_STAGE_MARKDOWN_HEADINGS = (
     "## Fallback",
     "## Completion Criteria",
 )
-RUN_STATUS_VALUES = {"active", "paused", "completed", "abandoned"}
-STAGE_STATUS_VALUES = {"pending", "active", "complete", "skipped"}
-
-
 @dataclass(frozen=True)
 class PlannedFile:
     path: str
@@ -210,6 +189,15 @@ def apply_render_plan(plan: RenderPlan, *, allow_non_git: bool = False) -> Apply
             f"cannot apply because existing harness path is conflicted: {first_conflict}"
         )
 
+    file_write_paths = [
+        plan.target / planned_file.path
+        for planned_file in plan.files
+        if planned_file.path != ".gitignore" and planned_file.status == "addable"
+    ]
+    if any(entry.status != "unchanged" for entry in plan.gitignore_entries):
+        file_write_paths.append(plan.target / ".gitignore")
+    _preflight_write_paths(plan.target, file_write_paths)
+
     files_written: list[str] = []
     for planned_file in plan.files:
         if planned_file.path == ".gitignore":
@@ -278,7 +266,7 @@ def check_harness(target: Path) -> CheckResult:
     manifest = _load_manifest(target, issues)
     registry_paths: set[str] = set()
     if isinstance(manifest, dict):
-        registry_paths = _check_manifest_schema(manifest, issues)
+        registry_paths = _check_manifest_schema(target, manifest, issues)
         _check_registry_consistency(target, manifest, issues)
 
     expected_registry_paths = {
@@ -1156,6 +1144,8 @@ def _next_stage(stage_id: str) -> str | None:
 def _planned_file_status(target: Path, relative_path: str, content: str) -> str:
     path = target / relative_path
     harness_root = target / ".agent-harness"
+    if path.is_symlink() or (relative_path.startswith(".agent-harness/") and harness_root.is_symlink()):
+        return "conflicted"
     if relative_path == "AGENTS.md" and path.exists():
         return "conflicted"
     if relative_path.startswith(".agent-harness/") and harness_root.exists():
@@ -1199,6 +1189,42 @@ def _apply_gitignore_entries(
     return tuple(missing_entries)
 
 
+def _preflight_write_paths(target: Path, paths: list[Path]) -> None:
+    for path in paths:
+        _preflight_write_path(target, path)
+
+
+def _preflight_write_path(target: Path, path: Path) -> None:
+    target_root = target.resolve()
+    symlink_path = _first_symlink_path(target_root, path)
+    if symlink_path is not None:
+        raise ApplyError(
+            f"refusing to write through symlinked path: {_display_path(target_root, symlink_path)}"
+        )
+    resolved_path = path.resolve(strict=False)
+    if resolved_path != target_root and not resolved_path.is_relative_to(target_root):
+        raise ApplyError(f"refusing to write outside target: {_display_path(target_root, path)}")
+
+
+def _first_symlink_path(target: Path, path: Path) -> Path | None:
+    current = path
+    while current != target:
+        if current.is_symlink():
+            return current
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return None
+
+
+def _display_path(target: Path, path: Path) -> str:
+    try:
+        return path.relative_to(target).as_posix()
+    except ValueError:
+        return str(path)
+
+
 def _required_gitignore_entries(target: Path) -> tuple[GitignoreEntryPlan, ...]:
     present_entries = _existing_gitignore_entries(target / ".gitignore")
     plans: list[GitignoreEntryPlan] = []
@@ -1221,7 +1247,7 @@ def _required_gitignore_entries(target: Path) -> tuple[GitignoreEntryPlan, ...]:
 
 
 def _existing_gitignore_entries(path: Path) -> set[str]:
-    if not path.exists():
+    if path.is_symlink() or not path.exists():
         return set()
     try:
         return {
@@ -1231,6 +1257,22 @@ def _existing_gitignore_entries(path: Path) -> set[str]:
         }
     except OSError:
         return set()
+
+
+def _is_project_relative_path_inside_target(target: Path, value: str) -> bool:
+    if value == "":
+        return False
+    posix_path = PurePosixPath(value)
+    windows_path = PureWindowsPath(value)
+    if Path(value).is_absolute() or posix_path.is_absolute() or windows_path.is_absolute():
+        return False
+    if windows_path.drive or windows_path.root:
+        return False
+    if ".." in posix_path.parts or ".." in windows_path.parts:
+        return False
+    target_root = target.resolve()
+    candidate = (target / value).resolve()
+    return candidate == target_root or candidate.is_relative_to(target_root)
 
 
 def _finding_value(findings: list[Finding], name: str, default: str) -> str:
@@ -1244,6 +1286,8 @@ def _load_manifest(target: Path, issues: list[CheckIssue]) -> object:
     manifest_path = target / ".agent-harness/harness.yaml"
     if not manifest_path.exists():
         return None
+    if not _check_target_read_path(target, manifest_path, ".agent-harness/harness.yaml", issues):
+        return None
     try:
         return yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
@@ -1251,7 +1295,11 @@ def _load_manifest(target: Path, issues: list[CheckIssue]) -> object:
         return None
 
 
-def _check_manifest_schema(manifest: dict[object, object], issues: list[CheckIssue]) -> set[str]:
+def _check_manifest_schema(
+    target: Path,
+    manifest: dict[object, object],
+    issues: list[CheckIssue],
+) -> set[str]:
     for field in ("generator", "workflow_id", "update_policy", "template_version", "generated_files", "stages"):
         if field not in manifest:
             issues.append(CheckIssue(".agent-harness/harness.yaml", f"manifest missing required field: {field}"))
@@ -1278,8 +1326,13 @@ def _check_manifest_schema(manifest: dict[object, object], issues: list[CheckIss
         for field in missing_fields:
             issues.append(CheckIssue(".agent-harness/harness.yaml", f"generated_files[{index}] missing required field: {field}"))
         path = record.get("path")
-        if isinstance(path, str):
-            registry_paths.add(path)
+        if not isinstance(path, str):
+            issues.append(CheckIssue(".agent-harness/harness.yaml", f"generated_files[{index}] path must be a string"))
+            continue
+        if not _is_project_relative_path_inside_target(target, path):
+            issues.append(CheckIssue(".agent-harness/harness.yaml", f"generated_files[{index}] path must be project-relative and stay inside target: {path}"))
+            continue
+        registry_paths.add(path)
     return registry_paths
 
 
@@ -1297,7 +1350,11 @@ def _check_registry_consistency(
         path_value = record.get("path")
         hash_value = record.get("last_generated_sha256")
         file_id = record.get("file_id")
-        if not isinstance(path_value, str) or not isinstance(hash_value, str):
+        if (
+            not isinstance(path_value, str)
+            or not isinstance(hash_value, str)
+            or not _is_project_relative_path_inside_target(target, path_value)
+        ):
             continue
         generated_path = target / path_value
         if not generated_path.exists():
@@ -1315,6 +1372,7 @@ def _check_registry_consistency(
             continue
         if not has_notice:
             issues.append(CheckIssue(path_value, "provenance header is missing human-edit protection wording"))
+        _check_generated_file_provenance_fields(path_value, record, fields, issues)
         if fields.get("path") != path_value:
             issues.append(CheckIssue(path_value, "provenance header path does not match registry path"))
         if isinstance(file_id, str) and fields.get("file_id") != file_id:
@@ -1325,9 +1383,33 @@ def _check_registry_consistency(
             issues.append(CheckIssue(path_value, "file content hash does not match generated-file registry"))
 
 
+def _check_generated_file_provenance_fields(
+    path: str,
+    record: dict[object, object],
+    fields: dict[str, str],
+    issues: list[CheckIssue],
+) -> None:
+    expected_fields = {
+        "generator_name": GENERATOR_NAME,
+        "generator_version": __version__,
+        "managed": "true",
+        "template_version": TEMPLATE_VERSION,
+    }
+    for field, expected_value in expected_fields.items():
+        if fields.get(field) != expected_value:
+            issues.append(CheckIssue(path, f"provenance header {field} is invalid"))
+
+    for field in ("generator_version", "template_version", "update_policy"):
+        record_value = record.get(field)
+        if isinstance(record_value, str) and fields.get(field) != record_value:
+            issues.append(CheckIssue(path, f"provenance header {field} does not match registry"))
+
+
 def _check_manifest_provenance(target: Path, issues: list[CheckIssue]) -> None:
     path = target / ".agent-harness/harness.yaml"
     if not path.exists():
+        return
+    if not _check_target_read_path(target, path, ".agent-harness/harness.yaml", issues):
         return
     try:
         fields, body, has_notice = _extract_provenance_header(path.read_text(encoding="utf-8"))
@@ -1362,10 +1444,30 @@ def _check_stage_contracts(target: Path, issues: list[CheckIssue]) -> None:
         context_path = f".agent-harness/stages/{stage_id}/CONTEXT.md"
         manifest_file = target / manifest_path
         context_file = target / context_path
-        if manifest_file.exists():
+        manifest_readable = manifest_file.exists() and _check_target_read_path(
+            target,
+            manifest_file,
+            manifest_path,
+            issues,
+        )
+        context_readable = context_file.exists() and _check_target_read_path(
+            target,
+            context_file,
+            context_path,
+            issues,
+        )
+        if manifest_readable:
             _check_stage_manifest(stage_id, manifest_file, manifest_path, issues)
-        if context_file.exists():
+        if context_readable:
             _check_stage_markdown(stage_id, context_file, context_path, issues)
+        if manifest_readable and context_readable:
+            _check_stage_manifest_markdown_drift(
+                stage_id,
+                manifest_file,
+                context_file,
+                context_path,
+                issues,
+            )
 
 
 def _check_stage_manifest(
@@ -1408,6 +1510,83 @@ def _check_stage_markdown(
             issues.append(CheckIssue(relative_path, f"stage Markdown contract missing heading: {heading}"))
 
 
+def _check_stage_manifest_markdown_drift(
+    expected_stage_id: str,
+    manifest_file: Path,
+    context_file: Path,
+    context_path: str,
+    issues: list[CheckIssue],
+) -> None:
+    try:
+        raw_manifest = yaml.safe_load(manifest_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return
+    if not isinstance(raw_manifest, dict):
+        return
+    try:
+        _fields, body, _has_notice = _extract_provenance_header(
+            context_file.read_text(encoding="utf-8")
+        )
+    except (OSError, UnicodeDecodeError):
+        return
+    if raw_manifest.get("stage_id") != expected_stage_id:
+        return
+
+    _check_stage_list_items_in_markdown(
+        raw_manifest,
+        body,
+        context_path,
+        issues,
+        field="required_outputs",
+        label="required_output",
+    )
+    _check_stage_list_items_in_markdown(
+        raw_manifest,
+        body,
+        context_path,
+        issues,
+        field="required_gates",
+        label="required_gate",
+    )
+    skills = raw_manifest.get("required_skills")
+    if isinstance(skills, list):
+        for skill_record in skills:
+            if not isinstance(skill_record, dict):
+                continue
+            skill = skill_record.get("skill")
+            if isinstance(skill, str) and skill not in body:
+                issues.append(
+                    CheckIssue(
+                        context_path,
+                        f"stage Markdown contract missing manifest required_skill: {skill}",
+                    )
+                )
+
+
+def _check_stage_list_items_in_markdown(
+    manifest: dict[object, object],
+    body: str,
+    context_path: str,
+    issues: list[CheckIssue],
+    *,
+    field: str,
+    label: str,
+) -> None:
+    items = manifest.get(field)
+    if not isinstance(items, list):
+        return
+    for item in items:
+        if not isinstance(item, str):
+            continue
+        if item not in body:
+            issues.append(
+                CheckIssue(
+                    context_path,
+                    f"stage Markdown contract missing manifest {label}: {item}",
+                )
+            )
+
+
 def _check_gitignore_policy(target: Path, issues: list[CheckIssue]) -> None:
     present_entries = _existing_gitignore_entries(target / ".gitignore")
     for entry in REQUIRED_GITIGNORE_ENTRIES:
@@ -1419,8 +1598,12 @@ def _check_runs(target: Path, issues: list[CheckIssue]) -> None:
     runs_root = target / ".agent-harness" / "runs"
     if not runs_root.exists():
         return
+    if not _check_target_read_path(target, runs_root, ".agent-harness/runs", issues):
+        return
     for metadata_file in runs_root.glob("*/run_metadata.yaml"):
         relative_path = metadata_file.relative_to(target).as_posix()
+        if not _check_target_read_path(target, metadata_file, relative_path, issues):
+            continue
         try:
             metadata = yaml.safe_load(metadata_file.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
@@ -1461,6 +1644,29 @@ def _sha256(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def _check_target_read_path(
+    target: Path,
+    path: Path,
+    relative_path: str,
+    issues: list[CheckIssue],
+) -> bool:
+    target_root = target.resolve()
+    symlink_path = _first_symlink_path(target_root, path)
+    if symlink_path is not None:
+        issues.append(
+            CheckIssue(
+                relative_path,
+                f"path must not traverse symlink: {_display_path(target_root, symlink_path)}",
+            )
+        )
+        return False
+    resolved_path = path.resolve(strict=False)
+    if resolved_path != target_root and not resolved_path.is_relative_to(target_root):
+        issues.append(CheckIssue(relative_path, "path must stay inside target"))
+        return False
+    return True
+
+
 def _registry_body_hash(path: str, body: str, recorded_hash: str) -> str:
     if path != ".agent-harness/harness.yaml":
         return _sha256(body)
@@ -1492,4 +1698,15 @@ def _format_bool(value: bool) -> str:
 
 
 def _looks_like_git_worktree(target: Path) -> bool:
-    return (target / ".git").exists()
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            cwd=target,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0 and completed.stdout.strip() == "true"

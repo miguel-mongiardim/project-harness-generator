@@ -85,7 +85,14 @@ def inspect_repository(
     pyproject = target / "pyproject.toml"
     pyproject_data: dict[str, object] = {}
     if pyproject.exists():
-        pyproject_data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        try:
+            pyproject_data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise InspectionError(f"could not read pyproject.toml: {exc}") from exc
+        except UnicodeDecodeError as exc:
+            raise InspectionError(f"could not decode pyproject.toml as UTF-8: {exc}") from exc
+        except tomllib.TOMLDecodeError as exc:
+            raise InspectionError(f"could not parse pyproject.toml: {exc}") from exc
 
     repository = [
         Finding(
@@ -251,6 +258,8 @@ def _run_project_checks(target: Path, candidates: list[CommandCandidate]) -> lis
             continue
         if candidate.command == "python -m pytest -q":
             results.append(_run_pytest_check(target, candidate.command))
+        elif candidate.command in {"make test", "make build"}:
+            results.append(_run_command_check(target, candidate.command))
     return results
 
 
@@ -258,6 +267,41 @@ def _run_pytest_check(target: Path, command: str) -> ProjectCheck:
     try:
         completed = subprocess.run(
             [sys.executable, "-m", "pytest", "-q"],
+            cwd=target,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=PROJECT_CHECK_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return ProjectCheck(
+            command=command,
+            status="timeout",
+            evidence=f"timeout: {PROJECT_CHECK_TIMEOUT_SECONDS}s",
+            notes="project check timed out",
+        )
+    except OSError as exc:
+        return ProjectCheck(
+            command=command,
+            status="error",
+            evidence="execution failed",
+            notes=str(exc),
+        )
+
+    return ProjectCheck(
+        command=command,
+        status="passed" if completed.returncode == 0 else "failed",
+        evidence=f"exit_code: {completed.returncode}",
+        notes="project check executed because --run-checks was set",
+    )
+
+
+def _run_command_check(target: Path, command: str) -> ProjectCheck:
+    parts = command.split()
+    executable = shutil.which(parts[0]) or parts[0]
+    try:
+        completed = subprocess.run(
+            [executable, *parts[1:]],
             cwd=target,
             text=True,
             capture_output=True,
@@ -379,7 +423,13 @@ def _detect_makefile_command_candidates(target: Path) -> list[CommandCandidate]:
         return []
 
     discovered_targets: list[str] = []
-    for line in makefile.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = makefile.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise InspectionError(f"could not read Makefile: {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise InspectionError(f"could not decode Makefile as UTF-8: {exc}") from exc
+    for line in lines:
         if line.startswith(("\t", " ")) or ":" not in line:
             continue
         name, _, remainder = line.partition(":")
@@ -466,7 +516,16 @@ def _format_project_checks(lines: list[str], checks: list[ProjectCheck]) -> None
 
 
 def _looks_like_git_worktree(target: Path) -> bool:
-    return (target / ".git").exists()
+    git_marker = target / ".git"
+    if git_marker.is_dir():
+        return (git_marker / "HEAD").is_file()
+    if not git_marker.is_file():
+        return False
+    try:
+        first_line = git_marker.read_text(encoding="utf-8").splitlines()[0]
+    except (OSError, UnicodeDecodeError, IndexError):
+        return False
+    return first_line.startswith("gitdir: ")
 
 
 def _classify_command_safety(command: str) -> str:

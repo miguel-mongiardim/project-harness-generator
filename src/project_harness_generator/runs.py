@@ -11,12 +11,11 @@ import subprocess
 import yaml
 
 from .config import UserConfig
-from .render_plan import STAGE_IDS
+from .workflow import STAGE_IDS, STAGE_STATUS_VALUES, RUN_STATUS_VALUES
 
 
-RUN_STATUS_VALUES = ["active", "paused", "completed", "abandoned"]
-STAGE_STATUS_VALUES = ["pending", "active", "complete", "skipped"]
 TASK_CLASSIFICATIONS = {"trivial", "minor", "non-trivial"}
+RUN_ID_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 
 
 @dataclass(frozen=True)
@@ -68,6 +67,12 @@ def create_run(
             "non-trivial Git worktree runs require --source-branch or --branch-waiver"
         )
 
+    stage_root = run_root / "stages"
+    stage_dirs = [stage_root / stage_id for stage_id in STAGE_IDS]
+    metadata_path = run_root / "run_metadata.yaml"
+    next_action_path = run_root / "next_action.md"
+    _preflight_write_paths(target, [run_root, *stage_dirs, metadata_path, next_action_path])
+
     stage_statuses = {
         stage_id: {"status": "active" if index == 0 else "pending"}
         for index, stage_id in enumerate(STAGE_IDS)
@@ -80,8 +85,8 @@ def create_run(
         "default_prd_path": config.default_prd_path,
         "default_plan_path": config.default_plan_path,
         "status": "active",
-        "status_values": RUN_STATUS_VALUES,
-        "stage_status_values": STAGE_STATUS_VALUES,
+        "status_values": list(RUN_STATUS_VALUES),
+        "stage_status_values": list(STAGE_STATUS_VALUES),
         "current_stage": STAGE_IDS[0],
         "source_branch": resolved_source_branch,
         "branch_waiver": branch_waiver,
@@ -89,13 +94,10 @@ def create_run(
     }
 
     files_written: list[str] = []
-    stage_root = run_root / "stages"
-    for stage_id in STAGE_IDS:
-        (stage_root / stage_id).mkdir(parents=True, exist_ok=True)
-    metadata_path = run_root / "run_metadata.yaml"
+    for stage_dir in stage_dirs:
+        stage_dir.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text(yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8")
     files_written.append(_relative_to_target(metadata_path, target))
-    next_action_path = run_root / "next_action.md"
     next_action_path.write_text(
         "\n".join(
             [
@@ -133,10 +135,12 @@ def format_new_run_result(result: NewRunResult) -> str:
 def pause_run(target: Path, run_id: str, *, next_action: str) -> RunStateResult:
     target = target.expanduser().resolve()
     run_root, metadata_path = _run_paths(target, run_id)
+    next_action_path = run_root / "next_action.md"
+    _preflight_write_paths(target, [metadata_path, next_action_path])
     metadata = _load_run_metadata(metadata_path)
     metadata["status"] = "paused"
     metadata_path.write_text(yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8")
-    (run_root / "next_action.md").write_text(
+    next_action_path.write_text(
         "\n".join(
             [
                 "# Next Action",
@@ -158,6 +162,7 @@ def pause_run(target: Path, run_id: str, *, next_action: str) -> RunStateResult:
 def resume_run(target: Path, run_id: str) -> RunStateResult:
     target = target.expanduser().resolve()
     _run_root, metadata_path = _run_paths(target, run_id)
+    _preflight_write_paths(target, [metadata_path])
     metadata = _load_run_metadata(metadata_path)
     metadata["status"] = "active"
     metadata_path.write_text(yaml.safe_dump(metadata, sort_keys=False), encoding="utf-8")
@@ -223,11 +228,49 @@ def _relative_to_target(path: Path, target: Path) -> str:
 
 
 def _run_paths(target: Path, run_id: str) -> tuple[Path, Path]:
+    if not RUN_ID_PATTERN.fullmatch(run_id):
+        raise RunError("run id must match generated run id format: <YYYY-MM-DD>-<slug>")
     run_root = target / ".agent-harness" / "runs" / run_id
     metadata_path = run_root / "run_metadata.yaml"
     if not metadata_path.exists():
         raise RunError(f"run metadata does not exist for run id: {run_id}")
     return run_root, metadata_path
+
+
+def _preflight_write_paths(target: Path, paths: list[Path]) -> None:
+    for path in paths:
+        _preflight_write_path(target, path)
+
+
+def _preflight_write_path(target: Path, path: Path) -> None:
+    target_root = target.resolve()
+    symlink_path = _first_symlink_path(target_root, path)
+    if symlink_path is not None:
+        raise RunError(
+            f"refusing to write through symlinked path: {_display_path(target_root, symlink_path)}"
+        )
+    resolved_path = path.resolve(strict=False)
+    if resolved_path != target_root and not resolved_path.is_relative_to(target_root):
+        raise RunError(f"refusing to write outside target: {_display_path(target_root, path)}")
+
+
+def _first_symlink_path(target: Path, path: Path) -> Path | None:
+    current = path
+    while current != target:
+        if current.is_symlink():
+            return current
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return None
+
+
+def _display_path(target: Path, path: Path) -> str:
+    try:
+        return path.relative_to(target).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def _load_run_metadata(path: Path) -> dict[str, object]:

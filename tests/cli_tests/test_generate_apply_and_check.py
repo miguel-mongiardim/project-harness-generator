@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
 import yaml
 
 
@@ -95,6 +96,39 @@ def test_apply_requires_git_worktree_unless_explicitly_waived() -> None:
         assert (target / "AGENTS.md").exists()
 
 
+def test_apply_requires_real_git_worktree_not_bogus_git_path() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target = Path(temp_dir) / "sample_project"
+        target.mkdir()
+        (target / ".git").write_text("not a git directory\n")
+
+        result = run_project_harness("generate", str(target), "--apply")
+
+        assert result.returncode != 0
+        assert "apply requires a Git worktree" in result.stderr
+        assert not (target / "AGENTS.md").exists()
+        assert not (target / ".agent-harness").exists()
+
+
+def test_apply_preflights_gitignore_symlink_before_writing_harness_files() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        target = root / "sample_project"
+        target.mkdir()
+        subprocess.run(["git", "init"], cwd=target, check=True, capture_output=True)
+        outside_gitignore = root / "outside-gitignore"
+        outside_gitignore.write_text("# outside\n")
+        _symlink_or_skip(outside_gitignore, target / ".gitignore")
+
+        result = run_project_harness("generate", str(target), "--apply")
+
+        assert result.returncode != 0
+        assert "refusing to write through symlinked path: .gitignore" in result.stderr
+        assert not (target / "AGENTS.md").exists()
+        assert not (target / ".agent-harness").exists()
+        assert outside_gitignore.read_text() == "# outside\n"
+
+
 def test_apply_refuses_existing_harness_paths_without_overwriting() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         target = Path(temp_dir) / "sample_project"
@@ -156,6 +190,46 @@ def test_check_reports_incomplete_stage_manifest_and_markdown_contract() -> None
         assert "stage Markdown contract missing heading: ## Verification" in check_result.stdout
 
 
+def test_check_reports_stage_manifest_markdown_drift() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target = Path(temp_dir) / "sample_project"
+        target.mkdir()
+        subprocess.run(["git", "init"], cwd=target, check=True, capture_output=True)
+        apply_result = run_project_harness("generate", str(target), "--apply")
+        assert apply_result.returncode == 0, apply_result.stderr
+        stage_yaml = target / ".agent-harness" / "stages" / "01_grill_context" / "stage.yaml"
+        stage_data = yaml.safe_load(stage_yaml.read_text())
+        stage_data["required_outputs"].append("missing_in_markdown.md")
+        stage_yaml.write_text(yaml.safe_dump(stage_data, sort_keys=False))
+
+        check_result = run_project_harness("check", str(target))
+
+        assert check_result.returncode != 0
+        assert "path: .agent-harness/stages/01_grill_context/CONTEXT.md" in check_result.stdout
+        assert "stage Markdown contract missing manifest required_output: missing_in_markdown.md" in check_result.stdout
+
+
+def test_check_rejects_symlinked_stage_contract_path() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        target = root / "sample_project"
+        target.mkdir()
+        subprocess.run(["git", "init"], cwd=target, check=True, capture_output=True)
+        apply_result = run_project_harness("generate", str(target), "--apply")
+        assert apply_result.returncode == 0, apply_result.stderr
+        stage_contract = target / ".agent-harness" / "stages" / "01_grill_context" / "CONTEXT.md"
+        outside_contract = root / "outside-stage.md"
+        outside_contract.write_text("# Outside\n")
+        stage_contract.unlink()
+        _symlink_or_skip(outside_contract, stage_contract)
+
+        check_result = run_project_harness("check", str(target))
+
+        assert check_result.returncode != 0
+        assert "path: .agent-harness/stages/01_grill_context/CONTEXT.md" in check_result.stdout
+        assert "path must not traverse symlink" in check_result.stdout
+
+
 def test_check_reports_header_drift_with_registry_authoritative() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         target = Path(temp_dir) / "sample_project"
@@ -182,6 +256,28 @@ def test_check_reports_header_drift_with_registry_authoritative() -> None:
         assert check_result.returncode != 0
         assert "path: AGENTS.md" in check_result.stdout
         assert "provenance header hash drift; registry data is authoritative" in check_result.stdout
+
+
+def test_check_rejects_generated_file_registry_paths_outside_target() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        target = root / "sample_project"
+        target.mkdir()
+        subprocess.run(["git", "init"], cwd=target, check=True, capture_output=True)
+        apply_result = run_project_harness("generate", str(target), "--apply")
+        assert apply_result.returncode == 0, apply_result.stderr
+        outside = root / "outside.md"
+        outside.write_text("outside target\n")
+        manifest_path = target / ".agent-harness" / "harness.yaml"
+        manifest = yaml.safe_load(manifest_path.read_text())
+        manifest["generated_files"][0]["path"] = "../outside.md"
+        manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False))
+
+        check_result = run_project_harness("check", str(target))
+
+        assert check_result.returncode != 0
+        assert "path: .agent-harness/harness.yaml" in check_result.stdout
+        assert "generated_files[0] path must be project-relative and stay inside target: ../outside.md" in check_result.stdout
 
 
 def test_check_reports_missing_volatile_state_ignore_policy() -> None:
@@ -237,6 +333,28 @@ def test_apply_writes_provenance_headers_and_registry_metadata() -> None:
         assert len(manifest_record["last_generated_sha256"]) == 64
 
 
+def test_check_validates_full_provenance_header_for_non_manifest_files() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        target = Path(temp_dir) / "sample_project"
+        target.mkdir()
+        subprocess.run(["git", "init"], cwd=target, check=True, capture_output=True)
+        apply_result = run_project_harness("generate", str(target), "--apply")
+        assert apply_result.returncode == 0, apply_result.stderr
+        router = target / "AGENTS.md"
+        router.write_text(
+            router.read_text()
+            .replace("generator_name: project-harness-generator", "generator_name: other")
+            .replace("managed: true", "managed: false")
+        )
+
+        check_result = run_project_harness("check", str(target))
+
+        assert check_result.returncode != 0
+        assert "path: AGENTS.md" in check_result.stdout
+        assert "provenance header generator_name is invalid" in check_result.stdout
+        assert "provenance header managed is invalid" in check_result.stdout
+
+
 def test_apply_outputs_selective_representative_contract_content() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         target = Path(temp_dir) / "sample_project"
@@ -275,3 +393,10 @@ def test_apply_outputs_selective_representative_contract_content() -> None:
         assert "stages:" in harness_manifest
         assert "stage_id: 00_project_discovery" in stage_manifest
         assert "completion_criteria:" in stage_manifest
+
+
+def _symlink_or_skip(source: Path, link: Path) -> None:
+    try:
+        os.symlink(source, link, target_is_directory=source.is_dir())
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable in this environment: {exc}")

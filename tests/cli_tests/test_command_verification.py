@@ -217,6 +217,58 @@ def test_run_checks_executes_project_tests_in_distinct_section() -> None:
         assert "exit_code: 0" in result.stdout
 
 
+def test_run_checks_reports_makefile_project_checks_in_distinct_section() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        root = Path(temp_dir)
+        target = root / "sample_project"
+        target.mkdir()
+        (target / "Makefile").write_text(
+            dedent(
+                """
+                test:
+                \tmake-test
+
+                build:
+                \tmake-build
+                """
+            ).strip()
+        )
+        fake_bin = root / "bin"
+        fake_bin.mkdir()
+        if os.name == "nt":
+            fake_make = fake_bin / "make.cmd"
+            fake_make.write_text(
+                "@echo off\r\n"
+                "echo %1> make-%1-ran.txt\r\n"
+                "exit /b 0\r\n"
+            )
+        else:
+            fake_make = fake_bin / "make"
+            fake_make.write_text(
+                "#!/bin/sh\n"
+                "printf '%s' \"$1\" > \"make-$1-ran.txt\"\n"
+            )
+        fake_make.chmod(0o755)
+
+        result = run_project_harness(
+            "inspect",
+            str(target),
+            "--run-checks",
+            extra_env={
+                "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+                "PATHEXT": ".COM;.EXE;.BAT;.CMD",
+            },
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert (target / "make-test-ran.txt").read_text().strip() == "test"
+        assert (target / "make-build-ran.txt").read_text().strip() == "build"
+        assert "Project Checks:" in result.stdout
+        assert "command: make test" in result.stdout
+        assert "command: make build" in result.stdout
+        assert result.stdout.count("status: passed") == 2
+
+
 def test_verify_commands_skips_unsafe_make_targets_without_run_checks() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         target = Path(temp_dir) / "sample_project"
